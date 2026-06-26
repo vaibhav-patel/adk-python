@@ -25,7 +25,6 @@ from google.adk.planners.planner_content_blocks import part_to_content_block
 from google.adk.planners.planner_content_blocks import parts_to_content_blocks
 from google.genai import types
 
-
 # ---------------------------------------------------------------------------
 # part_to_content_block
 # ---------------------------------------------------------------------------
@@ -129,7 +128,9 @@ def test_thought_without_recognized_tag_has_none_kind():
 def test_trailing_final_answer_tag_stripped_from_reasoning_block():
   # PlanReActPlanner keeps the FINAL_ANSWER separator on the reasoning part; it
   # should not leak into the standardized reasoning text.
-  part = types.Part(text=f'{REASONING_TAG} got it{FINAL_ANSWER_TAG}', thought=True)
+  part = types.Part(
+      text=f'{REASONING_TAG} got it{FINAL_ANSWER_TAG}', thought=True
+  )
   block = part_to_content_block(part)
   assert block['type'] == 'reasoning'
   assert block['reasoning_kind'] == 'reasoning'

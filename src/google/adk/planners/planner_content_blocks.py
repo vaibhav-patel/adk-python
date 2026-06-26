@@ -37,6 +37,7 @@ Existing consumers that rely on the ``Part`` output are unaffected.
 from __future__ import annotations
 
 from typing import Any
+from typing import cast
 from typing import Dict
 from typing import List
 from typing import Literal
@@ -44,7 +45,6 @@ from typing import Optional
 
 from google.genai import types
 from typing_extensions import TypedDict
-
 
 # Inline tags emitted by ``PlanReActPlanner``. Kept in sync with
 # ``plan_re_act_planner`` but duplicated here to avoid a circular import and to
@@ -55,15 +55,6 @@ _REASONING_TAG = '/*REASONING*/'
 _ACTION_TAG = '/*ACTION*/'
 _FINAL_ANSWER_TAG = '/*FINAL_ANSWER*/'
 
-# Maps a leading PlanReActPlanner tag to the fine-grained reasoning kind exposed
-# on reasoning content blocks.
-_TAG_TO_REASONING_KIND: Dict[str, str] = {
-    _PLANNING_TAG: 'planning',
-    _REPLANNING_TAG: 'replanning',
-    _REASONING_TAG: 'reasoning',
-    _ACTION_TAG: 'action',
-}
-
 ReasoningKind = Literal['planning', 'replanning', 'reasoning', 'action']
 """Fine-grained category of a reasoning block.
 
@@ -71,6 +62,15 @@ For ``PlanReActPlanner`` this is derived from the inline tag that prefixes the
 text (``/*PLANNING*/`` -> ``planning`` and so on). For ``BuiltInPlanner`` and
 for thought parts without a recognized tag it is ``None``.
 """
+
+# Maps a leading PlanReActPlanner tag to the fine-grained reasoning kind exposed
+# on reasoning content blocks.
+_TAG_TO_REASONING_KIND: Dict[str, ReasoningKind] = {
+    _PLANNING_TAG: 'planning',
+    _REPLANNING_TAG: 'replanning',
+    _REASONING_TAG: 'reasoning',
+    _ACTION_TAG: 'action',
+}
 
 
 class ReasoningContentBlock(TypedDict, total=False):
@@ -116,7 +116,7 @@ class ToolCallContentBlock(TypedDict, total=False):
 ContentBlock = Dict[str, Any]
 
 
-def _strip_leading_tag(text: str) -> tuple[str, Optional[str]]:
+def _strip_leading_tag(text: str) -> tuple[str, Optional[ReasoningKind]]:
   """Splits a recognized leading PlanReActPlanner tag off ``text``.
 
   Args:
@@ -131,7 +131,7 @@ def _strip_leading_tag(text: str) -> tuple[str, Optional[str]]:
   stripped = text.lstrip()
   for tag, kind in _TAG_TO_REASONING_KIND.items():
     if stripped.startswith(tag):
-      return stripped[len(tag):].strip(), kind
+      return stripped[len(tag) :].strip(), kind
   return text, None
 
 
@@ -149,13 +149,13 @@ def part_to_content_block(part: types.Part) -> Optional[ContentBlock]:
   # Function/tool calls take precedence over any incidental text on the part.
   if part.function_call and part.function_call.name:
     fc = part.function_call
-    block: ToolCallContentBlock = {
+    tool_call_block: ToolCallContentBlock = {
         'type': 'tool_call',
         'name': fc.name,
         'args': dict(fc.args) if fc.args else {},
         'id': fc.id,
     }
-    return block
+    return cast(ContentBlock, tool_call_block)
 
   # Only text parts produce reasoning/text blocks. A thought part with no text
   # (e.g. an Anthropic redacted-thinking part that only carries a signature)
@@ -176,7 +176,7 @@ def part_to_content_block(part: types.Part) -> Optional[ContentBlock]:
         'reasoning': body,
         'reasoning_kind': kind,
     }
-    return reasoning_block
+    return cast(ContentBlock, reasoning_block)
 
   # A non-thought text part is final/answer text. PlanReActPlanner leaves the
   # ``/*FINAL_ANSWER*/`` tag out of this part already, but strip a stray leading
@@ -184,9 +184,9 @@ def part_to_content_block(part: types.Part) -> Optional[ContentBlock]:
   text = part.text
   stripped = text.lstrip()
   if stripped.startswith(_FINAL_ANSWER_TAG):
-    text = stripped[len(_FINAL_ANSWER_TAG):].strip()
+    text = stripped[len(_FINAL_ANSWER_TAG) :].strip()
   text_block: TextContentBlock = {'type': 'text', 'text': text}
-  return text_block
+  return cast(ContentBlock, text_block)
 
 
 def parts_to_content_blocks(
